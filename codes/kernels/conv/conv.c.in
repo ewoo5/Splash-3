@@ -1,0 +1,137 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <unistd.h>
+
+#define DEFAULT_P                    1
+#define DEFAULT_N               262144
+#define DEFAULT_R                 1024 
+#define DEFAULT_M             67108864
+#define MAX_PROCESSORS            1024
+#define RADIX_S                8388608.0e0
+#define RADIX           70368744177664.0e0
+#define SEED                 314159265.0e0
+#define RATIO               1220703125.0e0
+#define PAGE_SIZE                 4096
+#define PAGE_MASK     (~(PAGE_SIZE-1))
+#define MAX_RADIX                 4096
+
+MAIN_ENV
+
+struct prefix_node {
+   long densities[MAX_RADIX];
+   long ranks[MAX_RADIX];
+   PAUSEDEC(done)
+   char pad[PAGE_SIZE];
+};
+
+struct global_memory {
+   long Index;                             /* process ID */
+   LOCKDEC(lock_Index)                    /* for fetch and add to get ID */
+   LOCKDEC(rank_lock)                     /* for fetch and add to get ID */
+/*   ALOCKDEC(section_lock,MAX_PROCESSORS)*/  /* key locks */
+   BARDEC(barrier_rank)                   /* for ranking process */
+   BARDEC(barrier_key)                    /* for key sorting process */
+   double *ranktime;
+   double *sorttime;
+   double *totaltime;
+   long final;
+   unsigned long starttime;
+   unsigned long rs;
+   unsigned long rf;
+   struct prefix_node prefix_tree[2 * MAX_PROCESSORS];
+} *global;
+
+struct global_private {
+  char pad[PAGE_SIZE];
+  long *rank_ff;         /* overall processor ranks */
+} gp[MAX_PROCESSORS];
+
+int main(int argc, char *argv[])
+{
+
+  /*
+    m - output features/channels
+    c - input features/channels
+    k - mask height/width
+    h - input height
+    w - input width
+  */
+
+  #define K 3
+  #define M 1
+  #define C 8 // should be too big for 8-way cache
+  #define NUM_SETS 64
+  #define TARGET_WAY 8
+  #define H 8 // 32 x 32 x 4bytes/word = 4096 (page size, will occupy same set)
+  #define W 8
+
+  unsigned long start_time;
+  unsigned long end_time;
+
+  CLOCK(start_time);
+
+  //unsigned int mask[M][C][4096]; // mask[m][c][k x k]
+  unsigned int ***mask;
+  unsigned int input[C][H][W]; // input[c][h][w]
+
+  unsigned int ***output; // output[m][h-k+1][w-k+1]
+
+  int m, c, k, i, j;
+
+  mask = (unsigned int ***)malloc(M*sizeof(unsigned int**));
+  for (m = 0; m < M; m++){
+    mask[m] = (unsigned int **)malloc(C*sizeof(unsigned int*));
+    for (c = 0; c < C; c++){
+      mask[m][c] = (unsigned int *)aligned_alloc(4096, K*K*sizeof(unsigned int)); 
+      for (i = 0; i < K; i++){
+        for (j = 0; j < K; j++){
+          mask[m][c][i*K + j] = rand()%10 + 1;
+        }
+      }
+    }
+  }
+
+  for (c = 0; c < C; c++){
+    for (i = 0; i < H; i++){
+      for (j = 0; j < W; j++){
+        input[c][i][j] = rand()%10 + 1;
+      }
+    }
+  }
+
+  output = (unsigned int ***)malloc(M*sizeof(unsigned int **));
+  for (m = 0; m < C; m++){
+    output[m] = (unsigned int **)malloc((H-K+1)*sizeof(unsigned int *));
+    for (i = 0; i < (H-K+1); i++){
+      output[m][i] = (unsigned int *)malloc((W-K+1)*sizeof(unsigned int));
+      for (j = 0; j < (W-K+1); j++){
+        output[m][i][j] = 0;
+      }
+    }
+  }
+
+  int io, jo;
+  for (m = 0; m < M; m++) {
+    for (io = 0; io < (H-K+1); io++) {
+      for (jo = 0; jo < (W-K+1); jo++) {
+        
+        for (i = 0; i < K; i++) {
+          for (j = 0; j < K; j++) {
+            for (c = 0; c < C; c++) {
+              output[m][io][jo] += input[c][io + i][jo + j] * mask[m][c][i *K + j];
+            }
+          }
+        }
+
+      }
+    }
+  }
+
+  CLOCK(end_time)
+
+  printf("\n\nConvolution time: %ld\n\n", end_time - start_time);
+
+  return 0;
+
+}

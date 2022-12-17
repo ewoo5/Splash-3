@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all clean kernels
 
 all:
 	$(MAKE) -C apps/barnes
@@ -15,6 +15,24 @@ all:
 	$(MAKE) -C kernels/lu/contiguous_blocks
 	$(MAKE) -C kernels/lu/non_contiguous_blocks
 	$(MAKE) -C kernels/radix
+
+kernels:
+	$(MAKE) -C kernels/cholesky
+	$(MAKE) -C kernels/fft
+	$(MAKE) -C kernels/lu/contiguous_blocks
+	$(MAKE) -C kernels/lu/non_contiguous_blocks
+	$(MAKE) -C kernels/radix
+
+conv:
+	$(MAKE) -C kernels/conv
+
+matmul:
+	$(MAKE) -C kernels/matmul
+
+copy_to_gem5:
+	cp kernels/fft/FFT ../../gem5/benchmarks/riscv/
+	cp kernels/lu/contiguous_blocks/LU ../../gem5/benchmarks/riscv/
+	cp kernels/radix/RADIX ../../gem5/benchmarks/riscv/
 
 clean:
 	$(MAKE) -C apps/barnes clean
